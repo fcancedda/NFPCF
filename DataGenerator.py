@@ -8,7 +8,7 @@ class DataGenerator:
     def __init__(self):
         self.df = self.load_ratings()
         self.num_users = self.df.uid.nunique()
-        self.num_movies = self.df.mid.nunique()
+        self.num_movies = self.df.mid.max() + 1
 
         self.users = set(self.df.uid.unique())
         self.movies = set(self.df.mid.unique())
