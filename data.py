@@ -14,9 +14,6 @@ class DataGenerator:
         self.movies = set(self.df.mid.unique())
 
         self.train, self.test = self._train_test_split()
-        # self.train = self.add_negatives(self.df, n_samples=4)
-        # self.test_pos = self.load_test_data()
-        # self.test_neg = self.load_negatives()
 
     def _train_test_split(self):
         self.df.rating = np.int8(1)
@@ -54,8 +51,6 @@ class DataGenerator:
 
     @staticmethod
     def get_features(df):
-        # return df.apply(lambda x: [x.uid, x.mid], axis=1).tolist()
-        # return df[['uid', 'mid']].to_numpy()
         return [
             df.uid.to_numpy(),
             df.mid.to_numpy()
