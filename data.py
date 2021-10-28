@@ -23,17 +23,20 @@ class DataGenerator:
         return (train[['uid', 'mid', 'rating']],
                 test[['uid', 'mid', 'rating']])
 
-    def add_negatives(self, df, n_samples=4):
-        combine = df.groupby('uid')['mid'].apply(set).reset_index()
-        combine['negatives'] = combine.mid.apply(lambda m: sample(list(self.movies - m), n_samples))
+    def add_negatives(self, df: pd.DataFrame, item: str = 'mid', items=None, n_samples: int = 4):
+        if items is None:
+            items = set(self.df[item].unique())
 
-        s = combine.apply(lambda m: pd.Series(m.negatives, dtype=np.int16), axis=1).stack().reset_index()
-        s.rename(columns={'level_0': 'uid', 0: 'mid'}, inplace=True)
+        combine = df.groupby('uid')[item].apply(set).reset_index()
+        combine['negatives'] = combine[item].apply(lambda x: sample(list(items - x), n_samples))
+
+        s = combine.apply(lambda x: pd.Series(x.negatives, dtype=np.int16), axis=1).stack().reset_index()
+        s.rename(columns={'level_0': 'uid', 0: item}, inplace=True)
         s.drop(['level_1'], axis=1, inplace=True)
         s['rating'] = np.int8(0)
         s.uid = s.uid.astype(np.int16)
 
-        complete = pd.concat([df, s]).sort_values(by=['uid', 'mid'])
+        complete = pd.concat([df, s]).sort_values(by=['uid', item])
         return complete.reset_index(drop=True)
 
     @staticmethod
