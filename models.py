@@ -16,22 +16,25 @@ class Model:
         self.gmf_user_embedding = Embedding(input_dim=n_users,
                                             output_dim=latent_dim,
                                             name='gmf_user_embedding',
+                                            embeddings_initializer='uniform',
                                             embeddings_regularizer=l2(0),
                                             input_length=1)
         self.gmf_item_embedding = Embedding(input_dim=n_items,
                                             output_dim=latent_dim,
                                             name='gmf_item_embedding',
-                                            # init = init_normal,
+                                            embeddings_initializer='uniform',
                                             embeddings_regularizer=l2(0),
                                             input_length=1)
         self.mlp_user_embedding = Embedding(input_dim=n_users,
                                             output_dim=latent_dim,
                                             name='mlp_user_embedding',
+                                            embeddings_initializer='uniform',
                                             embeddings_regularizer=l2(0),
                                             input_length=1)
         self.mlp_item_embedding = Embedding(input_dim=n_items,
                                             output_dim=latent_dim,
                                             name='mlp_item_embedding',
+                                            embeddings_initializer='uniform',
                                             embeddings_regularizer=l2(0),
                                             input_length=1)
 
@@ -82,14 +85,14 @@ class Model:
 
     def compile_model(self, learning_rate=.001, optimizer='adam'):
         if optimizer == 'adam':
-            self.model.compile(optimizer=Adam(lr=learning_rate), loss='binary_crossentropy')
+            self.model.compile(optimizer=Adam(learning_rate=learning_rate), loss='binary_crossentropy')
         else:
-            self.model.compile(optimizer=Adagrad(lr=learning_rate), loss='binary_crossentropy')
+            self.model.compile(optimizer=Adagrad(learning_rate=learning_rate), loss='binary_crossentropy')
         # return self.model
 
     def train_model(self, X_train, y_train, test, X_test, batch_size, epochs):
         for i in range(epochs):
-            self.model.fit(X_train, y_train, batch_size=batch_size, epochs=3, verbose=1, shuffle=True)
+            hist = self.model.fit(X_train, y_train, batch_size=batch_size, epochs=1, verbose=1, shuffle=True)
             hr, ndcg = self.evaluate(test, X_test, k=10)
             print(f'hit rate:{hr}\nndcg:{ndcg}\n')
         # return self.model
