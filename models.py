@@ -103,7 +103,7 @@ class GMF(nn.Module):
 
 class NCF(nn.Module):
     def __init__(self, num_users, num_items, embed_size, num_hidden, output_size):
-        super().__init__()
+        super(NCF, self).__init__()
         torch.manual_seed(0)
 
         # user and item embedding layers
@@ -122,8 +122,8 @@ class NCF(nn.Module):
         self.out_act = nn.Sigmoid().to(device)
 
     def forward(self, u, v):
-        U = self.user_emb(u)
-        V = self.like_emb(v)
+        U = self.user_embedding(u)
+        V = self.item_embedding(v)
         out = torch.cat([U, V], dim=1)
         out = self.fc1(out)
         out = self.relu1(out)
