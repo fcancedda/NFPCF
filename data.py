@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 from random import sample
-import tensorflow as tf
+# import tensorflow as tf
 
 from torch.utils.data import Dataset
 from torch.utils.data.dataset import T_co
