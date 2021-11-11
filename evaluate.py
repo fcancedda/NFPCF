@@ -42,18 +42,16 @@ class Evaluate:
         return np.mean(hits), np.mean(ndcgs)
 
     def eval_one_rating(self, user):
-        user_data = self.test_df[self.test_df.uid == user]
+        items = self.data.testing_tensors[1][user].squeeze()
+        user = self.data.testing_tensors[0][user].squeeze()
 
-        positive_items = user_data[user_data.rating == 1].mid.values
-        users, items = self.get_test_tensor(user_data)
-        true_item = positive_items[0]
-        predictions = self.model(users, items)
-        map_item_score = {}
-        predictions
+        true_item = items[0]
 
-        for i in range(len(predictions)):
-            item = items[i]
-            map_item_score[item] = predictions[i]
+        predictions = self.model(user.to(self.device), items.to(self.device))
+        map_item_score = dict(zip(items, predictions))
+        # for i in range(len(predictions)):
+        #     item = items[i]
+        #     map_item_score[item] = predictions[i]
         # items.pop()
         hr, ndcg = [], []
         # for i in positive_items:
@@ -63,12 +61,12 @@ class Evaluate:
         ndcg.append(get_ndcg(ranklist, true_item))
         return np.mean(hr), np.mean(ndcg)
 
-    def get_test_tensor(self, df_val):
-        # Prepare the test data points as tensors
-        test_df = self.data.add_negatives(df_val, n_samples=100)
-        users, items = LongTensor(test_df.uid).to(self.device), LongTensor(test_df.mid).to(self.device)
-        # test_negatives = test_neg[100 * (user - 1):100 * user]
-        return users, items
+    # def get_test_tensor(self, df_val):
+    #     # Prepare the test data points as tensors
+    #     test_df = self.data.add_negatives(df_val, n_samples=100)
+    #     users, items = LongTensor(test_df.uid).to(self.device), LongTensor(test_df.mid).to(self.device)
+    #     # test_negatives = test_neg[100 * (user - 1):100 * user]
+    #     return users, items
 
 
 def get_hit_ratio(ranklist, gtItem):
