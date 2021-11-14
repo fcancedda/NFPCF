@@ -22,7 +22,7 @@ class DataGenerator(Dataset):
 
         self.training_data = self.add_negatives(self.train, n_samples=num_negatives)
         self.testing_data = self.add_negatives(self.test, items=self.movies, n_samples=100)
-        self.testing_tensors = self.parse_testing()
+        self.testing_tensors = self.parse_testing(self.testing_tensors)
 
     def __len__(self):
         return self.training_data.shape[0]  # Length of the data to train on
@@ -33,9 +33,13 @@ class DataGenerator(Dataset):
         output = LongTensor([self.training_data.rating.iloc[index]])
         return user, movie, output
 
-    def parse_testing(self):
-        test = self.testing_data.sort_values(by=['uid', 'rating'], ascending=False)
-        users, movies, outputs = [], [] , []
+    def __call__(self, test_data):
+        return self.parse_testing(self.add_negatives(test_data, items=self.movies, n_samples=100))
+
+    @staticmethod
+    def parse_testing(df):
+        test = df.sort_values(by=['uid', 'rating'], ascending=False)
+        users, movies, outputs = [], [], []
         for _, u in test.groupby('uid'):
             users.append(LongTensor([u.uid.values]))
             movies.append(LongTensor([u.mid.values]))
