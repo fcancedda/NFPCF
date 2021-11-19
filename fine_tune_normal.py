@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from models import NCF
+from saved_models import NCF
 from fairness_measures import Measures
 import data
 
@@ -41,7 +41,7 @@ m = Measures()
 def load_model():
     # LOAD PRE-TRAINED MODEL
     ncf = NCF(data.num_users, data.num_jobs, emb_size, hidden_layers, output_size).to(device)
-    ncf.load_state_dict(torch.load("models/preTrained_NCF"))
+    ncf.load_state_dict(torch.load("saved_models/preTrained_NCF"))
 
     # FETCH NUMBER OF UNIQUE CAREERS
     n_careers = data.num_jobs

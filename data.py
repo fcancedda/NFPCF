@@ -64,9 +64,12 @@ class TargetData(Dataset):
         test = df.sort_values(by=['uid', 'rating'], ascending=False)
         users, movies, outputs = [], [], []
         for _, u in test.groupby('uid'):
-            users.append(LongTensor([u.uid.values]))
-            movies.append(LongTensor([u.mid.values]))
-            outputs.append(LongTensor([u.rating.values]))
+            users.append(LongTensor(u.uid.to_numpy()))
+            # users.append(LongTensor([u.uid.values]))
+            movies.append(LongTensor(u.mid.to_numpy()))
+            # movies.append(LongTensor([u.mid.values]))
+            outputs.append(LongTensor(u.rating.to_numpy()))
+            # outputs.append(LongTensor([u.rating.values]))
         return users, movies, outputs
 
     def _train_test_split(self):
