@@ -107,8 +107,8 @@ class NCF(nn.Module):
         torch.manual_seed(0)
 
         # user and item embedding layers
-        self.user_embedding = nn.Embedding(num_users, embed_size).to(device)
-        self.item_embedding = nn.Embedding(num_items, embed_size).to(device)
+        self.user_emb = nn.Embedding(num_users, embed_size).to(device)
+        self.like_emb = nn.Embedding(num_items, embed_size).to(device)
 
         self.fc1 = nn.Linear(embed_size * 2, num_hidden[0]).to(device)
         self.relu1 = nn.ReLU().to(device)
@@ -122,8 +122,8 @@ class NCF(nn.Module):
         self.out_act = nn.Sigmoid().to(device)
 
     def forward(self, u, v):
-        U = self.user_embedding(u)
-        V = self.item_embedding(v)
+        U = self.user_emb(u)
+        V = self.like_emb(v)
         out = torch.cat([U, V], dim=1)
         out = self.fc1(out)
         out = self.relu1(out)
@@ -137,6 +137,42 @@ class NCF(nn.Module):
         out = self.out_act(out)
         return out
 
+class GERAI(nn.Module):
+    def __init__(self, num_users, num_items, embed_size, num_hidden, output_size):
+        super(GERAI, self).__init__()
+        torch.manual_seed(0)
+
+        # user and item embedding layers
+        self.user_emb = nn.Embedding(num_users, embed_size).to(device)
+        self.like_emb = nn.Embedding(num_items, embed_size).to(device)
+
+        self.fc1 = nn.Linear(embed_size * 2, num_hidden[0]).to(device)
+
+        self.relu1 = nn.ReLU().to(device)
+        self.fc2 = nn.Linear(num_hidden[0], num_hidden[1]).to(device)
+        self.relu2 = nn.ReLU().to(device)
+        self.fc3 = nn.Linear(num_hidden[1], num_hidden[2]).to(device)
+        self.relu3 = nn.ReLU().to(device)
+        self.fc4 = nn.Linear(num_hidden[2], num_hidden[3]).to(device)
+        self.relu4 = nn.ReLU().to(device)
+        self.outLayer = nn.Linear(num_hidden[3], output_size).to(device)
+        self.out_act = nn.Sigmoid().to(device)
+
+    def forward(self, u, v):
+        U = self.user_emb(u)
+        V = self.like_emb(v)
+        out = torch.cat([U, V], dim=1)
+        out = self.fc1(out)
+        out = self.relu1(out)
+        out = self.fc2(out)
+        out = self.relu2(out)
+        out = self.fc3(out)
+        out = self.relu3(out)
+        out = self.fc4(out)
+        out = self.relu4(out)
+        out = self.outLayer(out)
+        out = self.out_act(out)
+        return out
 
 
 # from tensorflow import keras, nn

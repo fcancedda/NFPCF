@@ -10,13 +10,14 @@ import math
 import heapq  # for retrieval topK
 import multiprocessing
 import numpy as np
-from data import DataGenerator
+from data import TargetData
 from pandas import DataFrame
 from torch import LongTensor
 
 
 class Evaluate:
-    def __init__(self, data: DataGenerator, testing_data: DataFrame = None, k: int = 10, num_thread: int = 8, device: str = 'cuda'):
+    def __init__(self, data: TargetData, testing_data: DataFrame = None, k: int = 10, num_thread: int = 8,
+                 device: str = 'cuda'):
         self.data = data
         if testing_data is None:
             testing_data = data.test
@@ -49,24 +50,25 @@ class Evaluate:
         true_item = items[0]
 
         predictions = model(user.to(self.device), items.to(self.device))
+        # predictions = model(user.to(self.device), items.to(self.device))
         map_item_score = dict(zip(items, predictions))
         hr, ndcg = [], []
         ranklist = heapq.nlargest(self.k, map_item_score, key=map_item_score.get)
-        hr.append(get_hit_ratio(ranklist, true_item))
-        ndcg.append(get_ndcg(ranklist, true_item))
+        hr.append(self.get_hit_ratio(ranklist, true_item))
+        ndcg.append(self.get_ndcg(ranklist, true_item))
         return np.mean(hr), np.mean(ndcg)
 
+    @staticmethod
+    def get_hit_ratio(ranklist, gtItem):
+        for item in ranklist:
+            if item == gtItem:
+                return 1
+        return 0
 
-def get_hit_ratio(ranklist, gtItem):
-    for item in ranklist:
-        if item == gtItem:
-            return 1
-    return 0
-
-
-def get_ndcg(ranklist, gtItem):
-    for i in range(len(ranklist)):
-        item = ranklist[i]
-        if item == gtItem:
-            return math.log(2) / math.log(i + 2)
-    return 0
+    @staticmethod
+    def get_ndcg(ranklist, gtItem):
+        for i in range(len(ranklist)):
+            item = ranklist[i]
+            if item == gtItem:
+                return math.log(2) / math.log(i + 2)
+        return 0

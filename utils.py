@@ -1,3 +1,12 @@
+import importlib
+import data
+
+
+def load():
+    importlib.reload(data)
+    importlib.import_module('data', package='AttributeData')
+    importlib.import_module('data', package='TargetData')
+
 
 def zero_model_parameters(model):
     # sets all parameters to zero
