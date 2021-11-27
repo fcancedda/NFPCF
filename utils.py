@@ -16,7 +16,7 @@ def zero_model_parameters(model):
     dict_params2 = dict(params2)
     for name1, param1 in params1:
         if name1 in dict_params2:
-            dict_params2[name1].data.copy_(param1.data - dict_params2[name1].data)
+            dict_params2[name1].all_data.copy_(param1.all_data - dict_params2[name1].all_data)
 
     model.load_state_dict(dict_params2)
 
@@ -31,7 +31,7 @@ def add_model_parameters(model1, model2):
 
     for name1, param1 in params1:
         if name1 in dict_params2:
-            dict_params2[name1].data.copy_(param1.data + dict_params2[name1].data)
+            dict_params2[name1].all_data.copy_(param1.all_data + dict_params2[name1].all_data)
 
     model2.load_state_dict(dict_params2)
 
@@ -46,7 +46,7 @@ def sub_model_parameters(model1, model2):
 
     for name1, param1 in params1:
         if name1 in dict_params2:
-            dict_params2[name1].data.copy_(dict_params2[name1].data - param1.data)
+            dict_params2[name1].all_data.copy_(dict_params2[name1].all_data - param1.all_data)
 
     model2.load_state_dict(dict_params2)
 
@@ -58,5 +58,5 @@ def divide_model_parameters(model, f):
     dict_params2 = dict(params2)
     for name1, param1 in params1:
         if name1 != 'user_embedding.weight':
-            dict_params2[name1].data.copy_(param1.data / f)
+            dict_params2[name1].all_data.copy_(param1.all_data / f)
     model.load_state_dict(dict_params2)

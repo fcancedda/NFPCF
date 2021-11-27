@@ -31,6 +31,7 @@ def eval_model(model, dataset, num_users=6040, device='cuda'):
         y = model(user, item)
 
         y = y.tolist()
+
         y = sum(y, [])
 
         first = y.pop(0)
@@ -84,12 +85,15 @@ def get_test_instances_with_random_samples(data, random_samples, num_items, devi
 
 def evaluate_model(model, df_val, top_k, random_samples, num_items, device='cuda'):
     model.eval()
-    avg_HR = np.zeros((len(df_val), top_k))
-    avg_NDCG = np.zeros((len(df_val), top_k))
-
+    avg_hr = np.zeros((len(df_val), top_k))
+    avg_ndcg = np.zeros((len(df_val), top_k))
     for i in range(len(df_val)):
-        test_user_input, test_item_input = get_test_instances_with_random_samples(df_val[i], random_samples, num_items,
-                                                                                  device)
+        test_user_input, test_item_input = get_test_instances_with_random_samples(
+            df_val[i],
+            random_samples,
+            num_items,
+            device
+        )
         y_hat = model(test_user_input, test_item_input)
         y_hat = y_hat.cpu().detach().numpy().reshape((-1,))
         test_item_input = test_item_input.cpu().detach().numpy().reshape((-1,))
@@ -98,11 +102,11 @@ def evaluate_model(model, df_val, top_k, random_samples, num_items, device='cuda
             map_item_score[test_item_input[j]] = y_hat[j]
         for k in range(top_k):
             # Evaluate top rank list
-            ranklist = heapq.nlargest(k, map_item_score, key=map_item_score.get)
-            gtItem = test_item_input[0]
-            avg_HR[i, k] = get_hit_ratio(ranklist, gtItem)
-            avg_NDCG[i, k] = get_ndcg(ranklist, gtItem)
+            rank_list = heapq.nlargest(k, map_item_score, key=map_item_score.get)
+            true_item = test_item_input[0]
+            avg_hr[i, k] = get_hit_ratio(rank_list, true_item)
+            avg_ndcg[i, k] = get_ndcg(rank_list, true_item)
 
-    avg_HR = np.mean(avg_HR, axis=0)
-    avg_NDCG = np.mean(avg_NDCG, axis=0)
-    return avg_HR, avg_NDCG
+    avg_hr = np.mean(avg_hr, axis=0)
+    avg_ndcg = np.mean(avg_ndcg, axis=0)
+    return avg_hr, avg_ndcg

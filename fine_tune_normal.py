@@ -1,32 +1,28 @@
 """ FINE TUNING MODEL  WITHOUT FAIRNESS OR DIFFERENTIAL PRIVACY """
-import heapq
-import numpy as np
-
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
 
-from saved_models import NCF
-from fairness_measures import Measures
-import data
-
-from importlib import reload
-reload(data)
+from models import NCF3
 from data import AttributeData, TargetData
+# from fairness_measures import Measures
+from evaluators import evaluate_model
+from fairness_measures import Measures
 # CONSTANTS
 emb_size = 128
-hidden_layers = np.array([emb_size, 64, 32, 16])
+# hidden_layers = np.array([emb_size, 64, 32, 16])
+num_layers = 4
 output_size = 1
 
 num_epochs = 10
-batch_size = 256
+batch_size = 128
 
 num_negatives = 5
 
 random_samples = 15
 top_k = 10
 
-learning_rate = .001
+learning_rate = .01
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -34,38 +30,31 @@ fairness_thres = torch.tensor(0.1).to(device)
 epsilonBase = torch.tensor(0.0).to(device)
 
 # LOAD DATA AND FAIRNESS FUNCTIONS
+td = TargetData()
 data = AttributeData()
-m = Measures()
+# m = Measures()
 
 
 def load_model():
     # LOAD PRE-TRAINED MODEL
-    ncf = NCF(data.num_users, data.num_jobs, emb_size, hidden_layers, output_size).to(device)
-    ncf.load_state_dict(torch.load("saved_models/preTrained_NCF"))
+    ncf = NCF3(td.num_users, td.num_movies, emb_size, num_layers, output_size).to(device)
+    # ncf = NCF(data.num_users, data.num_jobs, emb_size, hidden_layers, output_size).to(device)
+    ncf.load_state_dict(torch.load("saved_models/NCF2"))
 
     # FETCH NUMBER OF UNIQUE CAREERS
     n_careers = data.num_jobs
-
     # CHANGE EMBEDDING SIZE TO FIT SENSITIVE INFO
-    ncf.like_emb = nn.Embedding(n_careers, emb_size).to(device)
+    ncf.embed_item_GMF = nn.Embedding(n_careers, emb_size).to(device)
+    ncf.embed_item_MLP = nn.Embedding(n_careers, emb_size * (2 ** (num_layers - 1))).to(device)
+    ncf.embed_item_GMF.weight.requires_grad = False
+    ncf.embed_item_MLP.weight.requires_grad = False
     return ncf
 
 
-def train_normal(train_fraction):
-    # REMOVES JOBS BASED ON THRESHOLD + SPLIT DATA
-    train, test = data.train_test_split(train_fraction)
-    # LOAD TRAINING DATA
-    all_users = torch.LongTensor(train['uid'].values).to(device)
-    all_items = torch.LongTensor(train['job'].values).to(device)
-
-    # PROTECTED ATTRIBUTE
-    all_genders = torch.LongTensor(train['gender'].values).to(device)
-
-    num_batches = np.int64(np.floor(train.shape[0] / batch_size))
-    ncf = load_model()
+def train_normal(model):
     # BINARY CROSS-ENTROPY LOSS + ADAM OPTIMIZER
     loss = nn.BCELoss()
-    optimizer = torch.optim.Adam(ncf.parameters(), lr=learning_rate, weight_decay=1e-6)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-6)
     final_loss = 0
     for i in range(num_epochs):
         j = 0  # track training progress
@@ -81,60 +70,41 @@ def train_normal(train_fraction):
             jobs = jb.to(device)  # career
             # genders = g.to(device)
             ratings = rt.to(device)
-
-            y_hat = ncf(users.squeeze(1), jobs.squeeze(1))
+            y_hat = model(users.squeeze(1), jobs.squeeze(1))
 
             final_loss = loss(y_hat, ratings.float())
-
-            predicted_probs = ncf(all_users, all_items)
-            # avg_epsilon = m.compute_edf(all_genders, predicted_probs, data.num_jobs, all_items, device)
 
             optimizer.zero_grad()
             final_loss.backward()
             optimizer.step()
 
             if j % int(1 + it_per_epoch / 10) == 0:
-                print(f"Progress: {round(100 * j / it_per_epoch)}%")
+                print(f"\r Epoch {i + 1}, Progress: {round(100 * j / it_per_epoch)}%", end='', flush=True)
+
             j += 1
-        ht, ndcg = evaluate_fine_tune(ncf, test, top_k, random_samples)
-        print(f'Hit Ratio: {ht}  NDCG: {ndcg}   LOSS1: {final_loss}')
+        ht, ndcg = evaluate_model(ncf, data.test[['uid', 'job']].values, top_k, random_samples, data.num_jobs, device)
 
-
-def evaluate_fine_tune(model, df_val, k, random_samples):
-    model.eval()
-    avg_hr = np.zeros((len(df_val), k))
-    avg_ndcg = np.zeros((len(df_val), k))
-
-    for i in range(len(df_val)):
-        test_df = data.add_negatives(
-            df_val,
-            item='job',
-            items=data.jobs,
-            n_samples=random_samples
-        )
-        users, items = torch.LongTensor(test_df.uid).to(device), torch.LongTensor(test_df.job).to(device)
-        y_hat = model(users, items)
-
-        y_hat = y_hat.cpu().detach().numpy().reshape((-1,))
-        items = items.cpu().detach().numpy().reshape((-1,))
-        map_item_score = {}
-        for j in range(len(y_hat)):
-            map_item_score[items[j]] = y_hat[j]
-        for k in range(k):
-            # Evaluate top rank list
-            ranklist = heapq.nlargest(k, map_item_score, key=map_item_score.get)
-            gtItem = items[0]
-            avg_hr[i, k] = m.get_hit_ratio(ranklist, gtItem)
-            avg_ndcg[i, k] = m.get_ndcg(ranklist, gtItem)
-        avg_hr = np.mean(avg_hr, axis=0)
-        avg_ndcg = np.mean(avg_ndcg, axis=0)
-        return avg_hr, avg_ndcg
-
-
-def run():
-    train_ratio = 0.7
-    train_normal(train_ratio)
+        print(f'\nHit Ratio: {round(ht[-1], 2)}  NDCG: {round(ndcg[-1], 2)}   LOSS1: {final_loss}')
 
 
 if __name__ == '__main__':
-    run()
+    ncf = load_model()
+    hr, ndcg = evaluate_model(
+        ncf,
+        data.test[['uid', 'job']].values,
+        top_k,
+        random_samples,
+        data.num_jobs,
+        device
+    )
+    print(f'\nHit Ratio: {round(hr[-1], 2)}  NDCG: {round(ndcg[-1], 2)}')
+
+    train_normal(ncf)
+
+    m = Measures()
+
+    all_genders = torch.LongTensor(data.train['gender'].values).to(device)
+    m.fairness(ncf, data.test, all_genders.cpu(), data.num_jobs, device)
+
+    torch.save(ncf.state_dict(), "saved_models/tunedNCF")
+

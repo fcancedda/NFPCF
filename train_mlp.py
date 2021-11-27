@@ -18,9 +18,9 @@ print("Done")
 # %% --- Hyper parameters ---
 num_epochs = 25
 batch_size = 128
-learning_rate = .1
+learning_rate = .01
 
-emb_size = 8  # LATENT DIM
+emb_size = 64  # LATENT DIM
 hidden_layers = np.array([emb_size, 64, 32, 16])
 output_size = 1
 
@@ -36,8 +36,8 @@ top_k = 10
 # %% --- Functions for training ---
 def train(model):
     # data.get_train_instances(seed=e)
-    # optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, weight_decay=1e-6)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-6)
+    optimizer = torch.optim.SGD(model.parameters(), lr=learning_rate, weight_decay=1e-6)
+    # optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate, weight_decay=1e-6)
 
     dataloader = DataLoader(data, batch_size=batch_size,
                             shuffle=True, num_workers=0)

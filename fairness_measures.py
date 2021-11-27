@@ -18,11 +18,11 @@ class Measures:
 
         for i in range(len(predictions)):
             counts_total[item_input[i], protected_attributes[i]] = counts_total[
-                                                                      item_input[i],
-                                                                      protected_attributes[i]] + 1.0
+                                                                       item_input[i],
+                                                                       protected_attributes[i]] + 1.0
             counts_class_one[item_input[i], protected_attributes[i]] = counts_class_one[
-                                                                         item_input[i], protected_attributes[i]
-                                                                     ] + predictions[i]
+                                                                           item_input[i], protected_attributes[i]
+                                                                       ] + predictions[i]
 
         # probabilitiesClassOne = counts_class_one/counts_total
         probabilities_for_df_smoothed = (counts_class_one + dirichlet_alpha) / (counts_total + concentration_parameter)
@@ -63,12 +63,12 @@ class Measures:
 
         for i in range(len(predictions)):
             group_item_score[item_input[i], protected_attributes[i]] = group_item_score[
-                                                                               item_input[i],
-                                                                               protected_attributes[i]
-                                                                               ] + predictions[i]
+                                                                           item_input[i],
+                                                                           protected_attributes[i]
+                                                                       ] + predictions[i]
             count_per_item[item_input[i], protected_attributes[i]] = count_per_item[
-                                                                       item_input[i],
-                                                                       protected_attributes[i]
+                                                                         item_input[i],
+                                                                         protected_attributes[i]
                                                                      ] + 1.0
             score_per_group[protected_attributes[i]] = score_per_group[protected_attributes[i]] + predictions[i]
         # probabilitiesClassOne = countsClassOne/countsTotal
@@ -93,3 +93,19 @@ class Measures:
             if item == true_item:
                 return np.log(2) / np.log(i + 2)
         return 0
+
+    def fairness(self, model, df_val, all_genders, num_items, device):
+        model.eval()
+        users = torch.LongTensor(df_val.uid.to_numpy()).to(device)
+        items = torch.LongTensor(df_val.job.to_numpy()).to(device)
+
+        y_hat = model(users, items)
+
+        avg_epsilon = self.compute_edf(all_genders, y_hat, num_items, items, device)
+        u_abs = self.compute_absolute_unfairness(all_genders, y_hat, num_items, items, device)
+
+        avg_epsilon = avg_epsilon.cpu().detach().numpy().reshape((-1,)).item()
+        print(f"average differential fairness: {avg_epsilon: .3f}")
+
+        u_abs = u_abs.cpu().detach().numpy().reshape((-1,)).item()
+        print(f"absolute unfairness: {u_abs: .3f}")
