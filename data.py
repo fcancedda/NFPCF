@@ -8,7 +8,6 @@ from torch.utils.data.dataset import T_co
 
 from torch import LongTensor
 
-
 class TargetData(Dataset):
     def __init__(self, num_negatives=4):
         self.num_jobs = 0
