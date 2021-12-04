@@ -27,11 +27,11 @@ def set_random_seed(state=1):
 # %% Data Loader Class
 class LoadData(Dataset):
     def __getitem__(self, index) -> T_co:
-        return self.train_data.user_id.iloc[index], self.train_data.like_id.iloc[index]
+        return self.train_data.uid.iloc[index], self.train_data.pos.iloc[index]
 
     def __init__(self, data: tuple):
         self.train_data, self.test_data = data
-        self.movies = set(self.train_data.like_id.unique())
+        self.movies = set(self.train_data.pos.unique())
         # self.testing_tensors = self.parse_testing(self.test_data)
 
     def __len__(self):
@@ -43,7 +43,7 @@ class LoadData(Dataset):
         for _, u in test.groupby('uid'):
             users.append(torch.LongTensor(u.uid.to_numpy()))
             # users.append(LongTensor([u.uid.values]))
-            movies.append(torch.LongTensor(u.mid.to_numpy()))
+            movies.append(torch.LongTensor(u.pos.to_numpy()))
             # movies.append(LongTensor([u.mid.values]))
             outputs.append(torch.LongTensor(u.rating.to_numpy()))
             # outputs.append(LongTensor([u.rating.values]))
@@ -179,8 +179,8 @@ if __name__ == '__main__':
     train_data = pd.read_csv('train-test/train_userPages.csv')
     test_data = pd.read_csv('train-test/test_userPages.csv')
 
-    num_uniqueUsers = len(train_data.user_id.unique())
-    num_unique_likes = len(train_data.like_id.unique())
+    num_uniqueUsers = len(train_data.uid.unique())
+    num_unique_likes = len(train_data.pos.unique())
     ds = LoadData((train_data, test_data))
 
     preTrained_NCF = NCF(num_uniqueUsers, num_unique_likes, emb_size, hidden_layers, output_size).to(

@@ -1,9 +1,8 @@
 import numpy as np
-import pandas as pd
-
 import utils
 import heapq
-import torch
+# import torch
+from torch import LongTensor, zeros, long, float
 
 
 # -----------------------------------------------------------------
@@ -65,33 +64,16 @@ def get_test_instances_with_random_samples(data, random_samples, num_items, devi
         user_input[i] = data[0]
         item_input[i] = j
         i += 1
-    return torch.LongTensor(user_input).to(device), torch.LongTensor(item_input).to(device)
+    return LongTensor(user_input).to(device), LongTensor(item_input).to(device)
 
 
-def evaluate_model(model, df_val, top_k, random_samples, num_items, device):
+# %% model evaluation: hit rate and NDCG
+def evaluate_model_old(model, df_val, top_K, random_samples, num_items, device):
     model.eval()
-    avg_HR = np.zeros((len(df_val), top_k))
-    avg_NDCG = np.zeros((len(df_val), top_k))
+    avg_HR = np.zeros((len(df_val), top_K))
+    avg_NDCG = np.zeros((len(df_val), top_K))
 
     for i in range(len(df_val)):
-        user_input, item_input = batch
-        n = len(user_input)  # batch size
-        user = torch.zeros((n + n * num_negatives), dtype=torch.long).to(device)
-        movie = torch.zeros((n + n * num_negatives), dtype=torch.long).to(device)
-        rating = torch.zeros((n + n * num_negatives), dtype=torch.float).to(device)
-
-        for i_u in user_input.unique():  # for each user
-            index = 0
-
-            msk = torch.eq(user_input, i_u)
-            user_array = user_input[msk]
-            item_array = item_input[msk]
-
-            un = len(user_array)  # user array size
-
-            watched_movies = set(item_array.numpy())
-            all_movies = ds.movies
-            not_seen = all_movies - watched_movies
         test_user_input, test_item_input = get_test_instances_with_random_samples(df_val[i], random_samples, num_items,
                                                                                   device)
         y_hat = model(test_user_input, test_item_input)
@@ -100,13 +82,56 @@ def evaluate_model(model, df_val, top_k, random_samples, num_items, device):
         map_item_score = {}
         for j in range(len(y_hat)):
             map_item_score[test_item_input[j]] = y_hat[j]
-        for k in range(top_k):
+        for k in range(top_K):
             # Evaluate top rank list
             ranklist = heapq.nlargest(k, map_item_score, key=map_item_score.get)
             gtItem = test_item_input[0]
             avg_HR[i, k] = utils.get_hit_ratio(ranklist, gtItem)
             avg_NDCG[i, k] = utils.get_ndcg(ranklist, gtItem)
-
     avg_HR = np.mean(avg_HR, axis=0)
     avg_NDCG = np.mean(avg_NDCG, axis=0)
     return avg_HR, avg_NDCG
+
+
+def evaluate_model(model, df_val, top_k, random_samples, num_items, device):
+    model.eval()
+    avg_hr = np.zeros((len(df_val), top_k))
+    avg_ndcg = np.zeros((len(df_val), top_k))
+
+    for i in range(len(df_val)):
+        user, target = df_val[i, 0], df_val[i, 1]
+        user_input = zeros((random_samples + 1), dtype=long).to(device)
+        item_input = zeros((random_samples + 1), dtype=long).to(device)
+
+        index = 0
+        # negative instances
+        for t in range(random_samples):
+            j = np.random.randint(num_items)
+            while j == target:
+                j = np.random.randint(num_items)
+            user_input[index] = user
+            item_input[index] = j
+            index += 1
+        # positive instance
+        user_input[index] = user
+        item_input[index] = target
+
+        y_hat = model(LongTensor(user_input).to(device), LongTensor(item_input).to(device))
+        y_hat = y_hat.cpu().detach().numpy().reshape((-1,))
+        test_item_input = item_input.cpu().detach().numpy().reshape((-1,))
+        map_item_score = {}
+        for j in range(1, len(y_hat)):
+            map_item_score[test_item_input[j]] = y_hat[j]
+
+        # ADD original at end
+        map_item_score[test_item_input[0]] = y_hat[0]
+
+        for k in range(top_k):
+            # Evaluate top rank list
+            ranklist = heapq.nlargest(k, map_item_score, key=map_item_score.get)
+            avg_hr[i, k] = utils.get_hit_ratio(ranklist, target)
+            avg_ndcg[i, k] = utils.get_ndcg(ranklist, target)
+
+    avg_hr = np.mean(avg_hr, axis=0)
+    avg_ndcg = np.mean(avg_ndcg, axis=0)
+    return avg_hr, avg_ndcg
