@@ -1,12 +1,12 @@
 import importlib
-import data
+# import data
 import math
-
-
-def load():
-    importlib.reload(data)
-    importlib.import_module('data', package='AttributeData')
-    importlib.import_module('data', package='TargetData')
+#
+#
+# def load():
+#     importlib.reload(data)
+#     importlib.import_module('data', package='AttributeData')
+#     importlib.import_module('data', package='TargetData')
 
 
 def zero_model_parameters(model):
@@ -63,17 +63,3 @@ def divide_model_parameters(model, f):
     model.load_state_dict(dict_params2)
 
 
-# EVALUATOR 2 (RETURNS ALL K VALS <= K)
-def get_hit_ratio(rank_list, true_item):
-    for item in rank_list:
-        if item == true_item:
-            return 1
-    return 0
-
-
-def get_ndcg(rank_list, true_item):
-    for i in range(len(rank_list)):
-        item = rank_list[i]
-        if item == true_item:
-            return math.log(2) / math.log(i + 2)
-    return 0

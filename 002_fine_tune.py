@@ -1,15 +1,12 @@
-import heapq
 import numpy as np
-import pandas as pd
 
 import torch
-import torch.nn as nn
 from torch.utils.data import DataLoader
-from torch import LongTensor, FloatTensor
 
-from fairness_measures import Measures
+from data import load_data, add_false
 from models import NCF
-from data import LoadData
+from evaluators import eval_results
+from fairness_measures import Measures
 
 m = Measures()
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -17,6 +14,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # %% DEBIAS CURRENT USER EMBEDDING
 def de_bias_embedding(model, data):
+    inputs, targets = data  # ( UID, MOVIE )
     # LOAD USER EMBEDDING AND WEIGH BY GENDER
     user_embeds = model.user_emb.weight.data.cpu().detach().numpy()
     user_embeds = user_embeds.astype('float')
@@ -25,14 +23,13 @@ def de_bias_embedding(model, data):
     gender_embed = np.zeros((2, user_embeds.shape[1]))
     num_users_x_group = np.zeros((2, 1))
 
-    for i in range(data.user_id.shape[0]):
-        u = data.user_id.iloc[i]
-        if data.gender.iloc[i] == 0:
-            gender_embed[0] += user_embeds[u]
+    for i in range(len(inputs)):
+        user, item, gender = inputs[i]
+        if gender == 0:
+            gender_embed[0] += user_embeds[user]
             num_users_x_group[0] += 1.0
         else:
-            gender_embed[1] += user_embeds[u]
-            gender_embed[1] += 1.0
+            gender_embed[1] += user_embeds[user]
             num_users_x_group[1] += 1.0
 
     ''' VERTICAL BIAS'''
@@ -43,9 +40,10 @@ def de_bias_embedding(model, data):
 
     ''' LINEAR PROJECTION '''
     debiased_user_embeds = user_embeds
-    for i in range(data.user_id.shape[0]):
-        u = data.user_id.iloc[i]
-        debiased_user_embeds[u] = user_embeds[u] - (np.inner(user_embeds[u].reshape(1, -1), vBias)[0][0]) * vBias
+    for i in range(len(inputs)):
+        user, item, gender = inputs[i]
+        debiased_user_embeds[user] = user_embeds[user] - (
+            np.inner(user_embeds[user].reshape(1, -1), vBias)[0][0]) * vBias
 
     print(f'males / female {max(num_users_x_group) / min(num_users_x_group)}')
     return torch.from_numpy(debiased_user_embeds.astype(np.float32)).to(device)
@@ -75,37 +73,43 @@ def fairness_measures(model, df_val, num_items, protectedAttributes):
 
 
 # %% FINE-TUNE FUNCTION
-def fine_tune(model, ds, epochs: int = 25, lr: float = .001):
-    # train, test = data
-    it_per_epoch = len(ds.gender)
-    model.train()
-    criterion = nn.BCELoss()
+def fine_tune(model, data, batch_size: int = 256, num_negatives: int = 16, n_jobs: int = 17, epochs: int = 25,
+              lr: float = .001):
+    dataloader = DataLoader(
+        data,
+        batch_size=batch_size,
+        pin_memory=True,
+        num_workers=0
+    )
+    criterion = torch.nn.BCELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-6)
-
-    all_user_input = torch.LongTensor(ds.user_id.values).to(device)
-    all_item_input = torch.LongTensor(ds.like_id.values).to(device)
-    # ds = LoadData(train, test)
+    all_user_input, all_item_input, all_gender_input = data.tensors[0][:, 0], data.tensors[0][:, 1], data.tensors[0][:,
+                                                                                                     2]
+    n = len(dataloader)
     for i in range(epochs):
         pct = 0
-        for batch in DataLoader(ds, shuffle=False, num_workers=0):
-            user, item, target = ds.add_negatives(batch, num_negatives, set(ds.like_id.unique()), device)
+        for batch in dataloader:
+            model.train()
 
-            y_hat = model(LongTensor(user).to(device), LongTensor(item).to(device))
-            loss1 = criterion(y_hat, FloatTensor(target).unsqueeze(1))
+            usr, itm, rtn = add_false(batch, num_negatives, n_jobs, device)
+            y_hat = model(usr, itm)
 
+            loss1 = criterion(y_hat, rtn.unsqueeze(1))
+
+            model.eval()
             predicted_probs = model(all_user_input, all_item_input)
-            avg_epsilon = m.compute_edf(ds.gender, predicted_probs, 17, all_item_input, device)
+            avg_epsilon = m.compute_edf(all_gender_input, predicted_probs, n_jobs, all_item_input, device)
             loss2 = torch.max(torch.tensor(0.0).to(device), (avg_epsilon - epsilonBase))
 
             loss = loss1 + fairness_thres * loss2
-
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            if int(pct / it_per_epoch * 100 % 5) == 0:
-                print(f'\rEpoch:{i} -- {int(pct / it_per_epoch * 100)}% -- loss: {loss}', end='')
-            pct += 1
-        ds.eval_results(ncf, ds.test, n_items=n_careers, note='Fine-Tuning')
+            if int(pct / n) % 10:
+                print(f'\rEpoch:{i} -- {int(pct / n)}% -- loss: {loss}', end='')
+            pct += 100
+
+        eval_results(model=model, n_items=n_jobs, note='Fine-Tuning')
 
 
 # %% MAIN
@@ -116,30 +120,31 @@ if __name__ == "__main__":
     num_epochs = 10
     batch_size = 256
     num_negatives = 5
-    random_samples = 15
+    # random_samples = 15
     top_k = 10
     learning_rate = .001
     # LOAD PRE-TRAINED MODEL
     ncf = NCF(6040, 3952, emb_size, hidden_layers, output_size).to(device)
     ncf.load_state_dict(torch.load("models/preTrained_NCF"))
-    ds = LoadData()
+    # ds = LoadData()
+    eval_results(model=ncf, n_items=3952, note='PRE DE-BIAS')
 
-    # ds.eval_results(ncf, pd.read_csv('train-test/test_userPages.csv'), note='PRE DE-BIAS')
+    dataset = load_data(pre_train=False, device=device)
 
     # FETCH NUMBER OF UNIQUE CAREERS
-    n_careers = 17
+    n_careers = 17  # len(dataset.tensors[1].unique())
     '''UPDATE USER EMBEDDINGS'''
     fairness_thres = torch.tensor(0.1).to(device)
     epsilonBase = torch.tensor(0.0).to(device)
 
     # replace page items with career items
-    ncf.like_emb = nn.Embedding(n_careers, emb_size).to(device)
+    ncf.like_emb = torch.nn.Embedding(n_careers, emb_size).to(device)
     # freeze user embedding
     ncf.user_emb.weight.requires_grad = False
     # replace user embedding of the model with debiased embeddings
 
-    ncf.user_emb.weight.data = de_bias_embedding(ncf, ds)
+    ncf.user_emb.weight.data = de_bias_embedding(ncf, dataset.tensors)
 
-    # ds.eval_results(ncf, ds.test, n_items=n_careers, note='POST DE-BIAS')
+    eval_results(model=ncf, n_items=n_careers, note='POST DE-BIAS')
 
-    fine_tune(ncf, ds, n_careers)
+    fine_tune(ncf, dataset, batch_size=batch_size, n_jobs=n_careers)

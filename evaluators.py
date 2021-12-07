@@ -1,14 +1,56 @@
 import numpy as np
-import utils
+# import utils
 import heapq
-# import torch
-from torch import LongTensor, zeros, long, float
+import math
+
+import pandas as pd
+from torch import LongTensor, zeros, long
+from pandas import concat, read_csv, DataFrame
+
+'''Eval funcitons'''
 
 
-# -----------------------------------------------------------------
-# %% --- Functions for evaluation ---
+def eval_results(
+        model,
+        data: DataFrame = None,
+        n_items: int = None,
+        n_samples: int = 100,
+        note: str = 'Pre-Training {USER, ITEM} -> {RATING}',
+        mode: bool = "RATINGS",
+        k: int = 10,
+        device='cpu'
+):
+    if mode == "CAREERS":
+        data = (
+            concat(
+                [
+                    read_csv("train-test/test_usersID.csv", names=['user_id']),
+                    read_csv("train-test/test_concentrationsID.csv", names=['like_id'])
+                    # test_protected_attributes['gender']],
+                ], axis=1)
+        ).reset_index(drop=True)
+    elif mode == 'RATINGS':
+        data = read_csv('train-test/test_userPages.csv')
 
-# EVALUATOR 1 (MAIN ~2x performance)
+    if n_items is None:
+        n_items = data.like_id.nunique()
+
+    results = evaluate_model_old(
+        model,
+        data.values,
+        k,
+        n_samples,
+        n_items,
+        device
+    )
+    print(
+        f'-- ({note})'
+        f'\nHr: {results[0][-1]}'
+        f'\nndcg:{results[1][-1]}\n '
+    )
+
+
+# %% EVAL FUNC 1
 def rank(arr, item):
     # rank of the test item in the list of negative instances
     # returns the number of elements that the test item is bigger than
@@ -47,6 +89,22 @@ def eval_model(model, dataset, num_users=6040, device='cuda'):
     return hr, ndcg
 
 
+# %% EVALUATOR 2 (RETURNS ALL K VALS <= K)
+def get_hit_ratio(rank_list, true_item):
+    for item in rank_list:
+        if item == true_item:
+            return 1
+    return 0
+
+
+def get_ndcg(rank_list, true_item):
+    for i in range(len(rank_list)):
+        item = rank_list[i]
+        if item == true_item:
+            return math.log(2) / math.log(i + 2)
+    return 0
+
+
 def get_test_instances_with_random_samples(data, random_samples, num_items, device):
     user_input = np.zeros((random_samples + 1))
     item_input = np.zeros((random_samples + 1))
@@ -67,15 +125,18 @@ def get_test_instances_with_random_samples(data, random_samples, num_items, devi
     return LongTensor(user_input).to(device), LongTensor(item_input).to(device)
 
 
-# %% model evaluation: hit rate and NDCG
 def evaluate_model_old(model, df_val, top_K, random_samples, num_items, device):
     model.eval()
     avg_HR = np.zeros((len(df_val), top_K))
     avg_NDCG = np.zeros((len(df_val), top_K))
 
     for i in range(len(df_val)):
-        test_user_input, test_item_input = get_test_instances_with_random_samples(df_val[i], random_samples, num_items,
-                                                                                  device)
+        test_user_input, test_item_input = get_test_instances_with_random_samples(
+            df_val[i],
+            random_samples,
+            num_items,
+            device
+        )
         y_hat = model(test_user_input, test_item_input)
         y_hat = y_hat.cpu().detach().numpy().reshape((-1,))
         test_item_input = test_item_input.cpu().detach().numpy().reshape((-1,))
@@ -86,13 +147,14 @@ def evaluate_model_old(model, df_val, top_K, random_samples, num_items, device):
             # Evaluate top rank list
             ranklist = heapq.nlargest(k, map_item_score, key=map_item_score.get)
             gtItem = test_item_input[0]
-            avg_HR[i, k] = utils.get_hit_ratio(ranklist, gtItem)
-            avg_NDCG[i, k] = utils.get_ndcg(ranklist, gtItem)
+            avg_HR[i, k] = get_hit_ratio(ranklist, gtItem)
+            avg_NDCG[i, k] = get_ndcg(ranklist, gtItem)
     avg_HR = np.mean(avg_HR, axis=0)
     avg_NDCG = np.mean(avg_NDCG, axis=0)
     return avg_HR, avg_NDCG
 
 
+# %% NITELY BUILD ;)
 def evaluate_model(model, df_val, top_k, random_samples, num_items, device):
     model.eval()
     avg_hr = np.zeros((len(df_val), top_k))
@@ -129,8 +191,8 @@ def evaluate_model(model, df_val, top_k, random_samples, num_items, device):
         for k in range(top_k):
             # Evaluate top rank list
             ranklist = heapq.nlargest(k, map_item_score, key=map_item_score.get)
-            avg_hr[i, k] = utils.get_hit_ratio(ranklist, target)
-            avg_ndcg[i, k] = utils.get_ndcg(ranklist, target)
+            avg_hr[i, k] = get_hit_ratio(ranklist, target)
+            avg_ndcg[i, k] = get_ndcg(ranklist, target)
 
     avg_hr = np.mean(avg_hr, axis=0)
     avg_ndcg = np.mean(avg_ndcg, axis=0)

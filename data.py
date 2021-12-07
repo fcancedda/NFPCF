@@ -1,115 +1,112 @@
-import pandas as pd
-import numpy as np
+# import pandas as pd
+from numpy.random import choice
+from pandas import read_csv
+from torch.utils.data import TensorDataset
+import torch
+from torch import LongTensor
 
-from torch.utils.data import Dataset
-from torch import zeros, long, float, eq, multinomial
-from torch import LongTensor, FloatTensor
-from evaluators import evaluate_model, evaluate_model_old
+
+def load_data(pre_train: bool = True, device: torch.device = None):
+    if pre_train:
+        train_data = read_csv('train-test/train_userPages.csv')
+        uid = LongTensor(train_data['user_id'].values).to(device)
+        mid = LongTensor(train_data['like_id'].values).to(device)
+        inps = torch.stack([uid, mid], 1)
+    else:
+        train_users = read_csv("train-test/train_usersID.csv", names=['user_id'])
+        uid = LongTensor(train_users['user_id'].values).to(device)
+
+        train_careers = read_csv("train-test/train_concentrationsID.csv", names=['like_id'])
+        mid = LongTensor(train_careers['like_id'].values).to(device)
+
+        train_protected_attributes = read_csv("train-test/train_protectedAttributes.csv")
+        gender = LongTensor(train_protected_attributes['gender'].values).to(device)
+        inps = torch.stack([uid, mid, gender], 1)
+    tgts = torch.ones(len(uid), dtype=torch.float)
+    return TensorDataset(inps, tgts)
 
 
-# %% PRE-PROCESS DATA
-class LoadData(Dataset):
-    def __init__(self):
-        # %% load data
-        train_users = pd.read_csv("train-test/train_usersID.csv", names=['user_id'])
-        test_users = pd.read_csv("train-test/test_usersID.csv", names=['user_id'])
+# %% ADD NEGATIVE OCCURRENCES FUNCTION (IMPLICIT FEEDBACK)
+def add_false(batch: list, n_false: int = 15, n_items: int = 3952, device: torch.device = 'cpu'):
+    inputs, targets = batch
+    users, items = inputs[:, 0], inputs[:, 1]
 
-        train_careers = pd.read_csv("train-test/train_concentrationsID.csv", names=['like_id'])
-        test_careers = pd.read_csv("train-test/test_concentrationsID.csv", names=['like_id'])
+    n = len(users)
+    n += n * n_false
 
-        train_protected_attributes = pd.read_csv("train-test/train_protectedAttributes.csv")
-        test_protected_attributes = pd.read_csv("train-test/test_protectedAttributes.csv")
+    user_train = torch.zeros(n, dtype=torch.long).to(device)
+    item_train = torch.zeros(n, dtype=torch.long).to(device)
+    target_train = torch.zeros(n, dtype=torch.float).to(device)
 
-        self.train = (pd.concat(
-            [
-                train_users['user_id'],
-                train_careers['like_id'],
-                train_protected_attributes['gender']],
-            axis=1
-        )).reset_index(drop=True)
-        self.test = (
-            pd.concat(
-                [
-                    test_users['user_id'],
-                    test_careers['like_id']
-                    # test_protected_attributes['gender']],
-                ], axis=1)
-        ).reset_index(drop=True)
+    neg_samples = choice(n_items, size=(10 * n * n_false,))
+    neg_samples_index = 0
 
-        self.user_id = self.train.user_id
-        self.like_id = self.train.like_id
-        self.gender = self.train.gender
-        self.results = None
+    i = 0
+    for index in range(len(inputs)):
+        user, item, *_ = inputs[index]
+        target = targets[index]
 
-    def __len__(self):
-        return len(self.user_id)
+        user_train[i] = user
+        item_train[i] = item
 
-    def __getitem__(self, index):
-        return (
-            self.user_id.iloc[index],
-            self.like_id.iloc[index]
-        )
+        target_train[i] = target
+        i += 1
 
-    def eval_results(self, model, data: pd.DataFrame, n_items=None, n_samples: int = 100, note: str = 'no note', k: int = 10,
-                     device='cpu'):
-        if n_items is None:
-            n_items = data.like_id.nunique()
-        self.results = evaluate_model_old(
-            model,
-            data.values,
-            k,
-            n_samples,
-            n_items,
-            device
-        )
+        msk = torch.eq(users, user)
+        positive = targets[msk]
 
-        print(
-            f'-- ({note})'
-            f'\nHr: {self.results[0][-1]}'
-            f'\nndcg:{self.results[1][-1]}\n '
-        )
+        for n in range(n_false):
+            j = neg_samples[neg_samples_index]
+            while j in positive:
+                neg_samples_index += 1
+                j = neg_samples[neg_samples_index]
+            user_train[i] = user
+            item_train[i] = j
+            target_train[i] = 0
+            i += 1
+            neg_samples_index += 1
+    return user_train, item_train, target_train
+#
+#     @staticmethod
+#     def add_negatives(batch: (), num_negatives, movies: {}, device):
+#         user_input, item_input = batch
+#         n = len(user_input)  # ~=batch size
+#         n += n * num_negatives
+#
+#         user = torch.zeros(n, dtype=torch.long).to(device)
+#         movie = torch.zeros(n, dtype=torch.long).to(device)
+#
+#         rating = torch.zeros(n, dtype=torch.float).to(device)
+#         index = 0
+#         for i_u in user_input.unique():  # for each user
+#
+#             msk = torch.eq(user_input, i_u)
+#             user_array = user_input[msk]
+#             item_array = item_input[msk]
+#
+#             un = len(user_array)  # user array size
+#
+#             watched_movies = set(item_array.numpy())
+#             not_seen = movies - watched_movies
+#             neg_samples = torch.multinomial(
+#                 FloatTensor(np.array(list(not_seen))),
+#                 num_samples=un * num_negatives,
+#                 replacement=True
+#             )
+#             neg_index = 0
+#             for i_r in range(un):
+#                 user[index] = i_u
+#                 movie[index] = item_array[i_r]
+#                 rating[index] = 1
+#                 index += 1
+#                 for s in range(num_negatives):
+#                     user[index] = i_u
+#                     movie[index] = neg_samples[neg_index]
+#                     # rating[index] = 0
+#                     index += 1
+#                     neg_index += 1
+#         return user, movie, rating
 
-    @staticmethod
-    def add_negatives(batch: (), num_negatives, movies: {}, device):
-        # data_batch = (df_train[batch_i:(batch_i + batch_size)]).reset_index(drop=True)
-        user_input, item_input = batch
-        n = len(user_input)  # ~=batch size
-        n += n * num_negatives
-
-        user = zeros(n, dtype=long).to(device)
-        movie = zeros(n, dtype=long).to(device)
-
-        rating = zeros(n, dtype=float).to(device)
-
-        for i_u in user_input.unique():  # for each user
-            index = 0
-
-            msk = eq(user_input, i_u)
-            user_array = user_input[msk]
-            item_array = item_input[msk]
-
-            un = len(user_array)  # user array size
-
-            watched_movies = set(item_array.numpy())
-            not_seen = movies - watched_movies
-            neg_samples = multinomial(
-                FloatTensor(np.array(list(not_seen))),
-                num_samples=un * num_negatives,
-                replacement=True
-            )
-            neg_index = 0
-            for i_r in range(un):
-                user[index] = i_u
-                movie[index] = item_array[i_r]
-                rating[index] = 1
-                index += 1
-                for s in range(num_negatives):
-                    user[index] = i_u
-                    movie[index] = neg_samples[neg_index]
-                    # rating[index] = 0
-                    index += 1
-                    neg_index += 1
-        return user, movie, rating
 
 # class TargetData(Dataset):
 #     def __init__(self, num_negatives=4):
@@ -140,7 +137,7 @@ class LoadData(Dataset):
 #
 #     @staticmethod
 #     def load_ratings(min_ratings=5):
-#         df = pd.read_csv('MovieLens/ratings.dat',
+#         df = read_csv('MovieLens/ratings.dat',
 #                          sep='::',
 #                          header=None,
 #                          names=['uid_old', 'mid_old', 'rating', 'date'],
@@ -310,7 +307,7 @@ class LoadData(Dataset):
 #         return train, test
 #
 #     def _features(self):
-#         df = pd.read_csv('MovieLens/users.dat',
+#         df = read_csv('MovieLens/users.dat',
 #                          sep='::',
 #                          header=None,
 #                          names=['uid', 'gender', 'age', 'ojob', 'zip'],
