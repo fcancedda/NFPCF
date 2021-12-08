@@ -1,4 +1,8 @@
 # import pandas as pd
+import random
+
+import numpy as np
+import pandas as pd
 from numpy.random import choice
 from pandas import read_csv
 from torch.utils.data import TensorDataset
@@ -52,7 +56,7 @@ def add_false(batch: list, n_false: int = 15, n_items: int = 3952, device: torch
         target_train[i] = target
         i += 1
 
-        msk = torch.eq(users, user)
+        msk = users == user
         positive = targets[msk]
 
         for n in range(n_false):

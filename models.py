@@ -101,6 +101,79 @@ class GMF(nn.Module):
         return out
 
 
+class NCF3(nn.Module):
+    def __init__(self, user_num, item_num, factor_num, num_layers,
+                 dropout, GMF_model=None, MLP_model=None):
+        super(NCF3, self).__init__()
+        """
+        user_num: number of users;
+        item_num: number of items;
+        factor_num: number of predictive factors;
+        num_layers: the number of layers in MLP model;
+        dropout: dropout rate between fully connected layers;
+        model: 'MLP', 'GMF', 'NeuMF-end', and 'NeuMF-pre';
+        GMF_model: pre-trained GMF weights;
+        MLP_model: pre-trained MLP weights.
+        """
+        self.dropout = dropout
+        self.GMF_model = GMF_model
+        self.MLP_model = MLP_model
+
+        self.embed_user_GMF = nn.Embedding(user_num, factor_num)
+        self.embed_item_GMF = nn.Embedding(item_num, factor_num)
+
+        self.embed_user_MLP = nn.Embedding(user_num, factor_num * (2 ** (num_layers - 1)))
+        self.embed_item_MLP = nn.Embedding(item_num, factor_num * (2 ** (num_layers - 1)))
+
+        MLP_modules = []
+        for i in range(num_layers):
+            input_size = factor_num * (2 ** (num_layers - i))
+            MLP_modules.append(nn.Dropout(p=self.dropout))
+            MLP_modules.append(nn.Linear(input_size, input_size // 2))
+            MLP_modules.append(nn.ReLU())
+        self.MLP_layers = nn.Sequential(*MLP_modules)
+
+        predict_size = factor_num * 2
+        self.predict_layer = nn.Linear(predict_size, 1).to(device)
+
+        self.out_act = nn.Sigmoid().to(device)
+        # self._init_weight_()
+
+    def _init_weight_(self):
+        nn.init.normal_(self.embed_user_GMF.weight, std=0.01)
+        nn.init.normal_(self.embed_user_MLP.weight, std=0.01)
+        nn.init.normal_(self.embed_item_GMF.weight, std=0.01)
+        nn.init.normal_(self.embed_item_MLP.weight, std=0.01)
+        #
+        for m in self.MLP_layers:
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight).to(device)
+
+        nn.init.kaiming_uniform_(self.predict_layer.weight,
+                                 a=1,
+                                 nonlinearity='sigmoid'
+                                 ).to(device)
+
+        for m in self.modules():
+            if isinstance(m, nn.Linear) and m.bias is not None:
+                m.bias.data.zero_()
+
+    def forward(self, user, item):
+        embed_user_GMF = self.embed_user_GMF(user)
+        embed_item_GMF = self.embed_item_GMF(item)
+        output_GMF = embed_user_GMF * embed_item_GMF
+
+        embed_user_MLP = self.embed_user_MLP(user)
+        embed_item_MLP = self.embed_item_MLP(item)
+        interaction = torch.cat((embed_user_MLP, embed_item_MLP), -1)
+        output_MLP = self.MLP_layers(interaction)
+
+        concat = torch.cat((output_GMF, output_MLP), -1)
+        prediction = self.predict_layer(concat)
+        # return prediction
+        return self.out_act(prediction)
+
+
 class NCF(nn.Module):
     def __init__(self, num_users, num_items, embed_size, num_hidden, output_size):
         super(NCF, self).__init__()

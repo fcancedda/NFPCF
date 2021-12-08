@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 
 from data import load_data, add_false
 from evaluators import eval_results
-from models import NCF
+from models import NCF3
 
 
 # %% Hardcode Random State ( 1 )
@@ -27,6 +27,7 @@ def train_model(model):
         pin_memory=True,
         num_workers=2
     )
+
     loss_ = torch.nn.BCELoss()  # Criterion
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate, weight_decay=1e-6)
     # LOAD PREVIOUS MODEL
@@ -91,8 +92,8 @@ if __name__ == '__main__':
     unique_items = len(dataset.tensors[0][:, 1].unique())
 
     # COMPILE MODEL
-    ncf = NCF(unique_users, unique_items, emb_size, hidden_layers, output_size).to(
-        device)
+    ncf = NCF3(unique_users, unique_items, emb_size, 4, output_size).to(device)
+    # ncf = NCF(unique_users, unique_items, emb_size, hidden_layers, output_size).to(device)
 
     # TRAIN MODEL
     train_model(ncf)

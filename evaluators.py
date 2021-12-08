@@ -1,3 +1,5 @@
+import random
+
 import numpy as np
 # import utils
 import heapq
@@ -8,6 +10,29 @@ from torch import LongTensor, zeros, long
 from pandas import concat, read_csv, DataFrame
 
 '''Eval funcitons'''
+
+
+def parse_testing(df, n_samples: int = 100):
+    unique = df.like_id.unique()
+    df['rating'] = np.int8(1)
+    combine = df.groupby('user_id')['like_id'].apply(set).reset_index()
+    combine['negatives'] = combine['like_id'].apply(lambda x: random.sample(list(set(unique) - x), n_samples))
+
+    s = combine.apply(lambda x: pd.Series(x.negatives, dtype=np.int16), axis=1).stack().reset_index()
+    s.rename(columns={'level_0': 'user_id', 0: 'like_id'}, inplace=True)
+    s.drop(['level_1'], axis=1, inplace=True)
+    s['rating'] = np.int8(0)
+    s.user_id = s.uid.astype(np.int16)
+
+    complete = pd.concat([df, s]).sort_values(by=['user_id', 'like_id'])
+    complete.reset_index(drop=True, inplace=True)
+    test = complete.sort_values(by=['user_id', 'rating'], ascending=False)
+    users, movies, outputs = [], [], []
+    for _, u in test.groupby('user_id'):
+        users.append(LongTensor(u.user_id.to_numpy()))
+        movies.append(LongTensor(u.like_id.to_numpy()))
+        outputs.append(LongTensor(u.rating.to_numpy()))
+    return users, movies, outputs
 
 
 def eval_results(
@@ -35,18 +60,24 @@ def eval_results(
     if n_items is None:
         n_items = data.like_id.nunique()
 
-    results = evaluate_model_old(
-        model,
-        data.values,
-        k,
-        n_samples,
-        n_items,
-        device
-    )
+    # results = evaluate_model_old(
+    #     model,
+    #     data.values,
+    #     k,
+    #     n_samples,
+    #     n_items,
+    #     device
+    # )
+    # print(
+    #     f'-- ({note})'
+    #     f'\nHr: {results[0][-1]}'
+    #     f'\nndcg:{results[1][-1]}\n '
+    # )
+    results = eval_model(model, parse_testing(data, n_samples=n_samples), num_users=6040, device=device)
     print(
         f'-- ({note})'
-        f'\nHr: {results[0][-1]}'
-        f'\nndcg:{results[1][-1]}\n '
+        f'\nHr: {results[0]}'
+        f'\nndcg:{results[1]}\n '
     )
 
 
@@ -64,13 +95,13 @@ def rank(arr, item):
     return index
 
 
-def eval_model(model, dataset, num_users=6040, device='cuda'):
+def eval_model(model, testing_tensors, num_users=6040, device='cuda'):
     # Evaluates the model and returns HR@10 and NDCG@10
     hits = 0
     ndcg = 0
     for u in range(num_users):
-        user = dataset.testing_tensors[0][u].squeeze().to(device)
-        item = dataset.testing_tensors[1][u].squeeze().to(device)
+        user = testing_tensors[0][u].squeeze().to(device)
+        item = testing_tensors[1][u].squeeze().to(device)
         y = model(user, item)
 
         y = y.tolist()
@@ -154,7 +185,7 @@ def evaluate_model_old(model, df_val, top_K, random_samples, num_items, device):
     return avg_HR, avg_NDCG
 
 
-# %% NITELY BUILD ;)
+# %% NIGHT BUILD ;)
 def evaluate_model(model, df_val, top_k, random_samples, num_items, device):
     model.eval()
     avg_hr = np.zeros((len(df_val), top_k))
