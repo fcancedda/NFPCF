@@ -35,41 +35,23 @@ def add_false(batch: list, n_false: int = 15, n_items: int = 3952, device: torch
     inputs, targets = batch
     users, items = inputs[:, 0], inputs[:, 1]
 
-    n = len(users)
-    n += n * n_false
-
-    user_train = torch.zeros(n, dtype=torch.long).to(device)
-    item_train = torch.zeros(n, dtype=torch.long).to(device)
-    target_train = torch.zeros(n, dtype=torch.float).to(device)
-
-    neg_samples = choice(n_items, size=(10 * n * n_false,))
-    neg_samples_index = 0
-
-    i = 0
-    for index in range(len(inputs)):
-        user, item, *_ = inputs[index]
-        target = targets[index]
-
-        user_train[i] = user
-        item_train[i] = item
-
-        target_train[i] = target
-        i += 1
-
-        msk = users == user
-        positive = targets[msk]
-
-        for n in range(n_false):
-            j = neg_samples[neg_samples_index]
-            while j in positive:
-                neg_samples_index += 1
-                j = neg_samples[neg_samples_index]
-            user_train[i] = user
-            item_train[i] = j
-            target_train[i] = 0
-            i += 1
-            neg_samples_index += 1
-    return user_train, item_train, target_train
+    not_seen = {}
+    n = set(range(n_items))
+    negatives = []
+    for user in users.numpy():
+        if user not in not_seen:
+            not_seen[user] = list(n - set(items[users == user].numpy()))
+        negatives.append((
+            torch.full((n_false,), user),
+            torch.tensor(choice(not_seen[user], size=n_false)),
+            torch.zeros((n_false,))
+        ))
+        for neg in negatives:
+            uu, mm, rr = neg
+            users = torch.cat([users, uu])
+            items = torch.cat([items, mm])
+            targets = torch.cat([targets, rr])
+    return users, items, targets
 #
 #     @staticmethod
 #     def add_negatives(batch: (), num_negatives, movies: {}, device):

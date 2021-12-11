@@ -49,15 +49,9 @@ def train_model(model):
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            torch.save({
-                'epoch': epoch,
-                'model_state_dict': model.state_dict(),
-                'optimizer_state_dict': optimizer.state_dict(),
-                'loss': loss,
-            }, path)
             if int(pct / n) % 5 == 0:
                 print(f'\rEpoch:{i} -- {int(pct / n)}% -- loss: {loss}', end='')
-                if int(pct / n) % 50 == 0:
+                if int(pct / n) % 48 == 0:
                     torch.save({
                         'epoch': epoch,
                         'model_state_dict': model.state_dict(),

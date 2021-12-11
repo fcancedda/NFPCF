@@ -83,8 +83,11 @@ def fine_tune(model, data, batch_size: int = 256, num_negatives: int = 16, n_job
     )
     criterion = torch.nn.BCELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-6)
-    all_user_input, all_item_input, all_gender_input = data.tensors[0][:, 0], data.tensors[0][:, 1], data.tensors[0][:,
-                                                                                                     2]
+    all_user_input, all_item_input, all_gender_input = (
+        data.tensors[0][:, 0],
+        data.tensors[0][:, 1],
+        data.tensors[0][:, 2]
+    )
     n = len(dataloader)
     for i in range(epochs):
         pct = 0
