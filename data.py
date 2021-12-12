@@ -1,68 +1,61 @@
-import pandas as pd
-import numpy as np
-from random import sample
-import tensorflow as tf
+from numpy.random import choice, seed
+from pandas import read_csv
+from torch.utils.data import TensorDataset
+from torch import LongTensor
+import torch
 
 
-class DataGenerator:
-    def __init__(self):
-        self.df = self.load_ratings()
-        self.num_users = self.df.uid.nunique()
-        self.num_movies = self.df.mid.nunique()
+# %% Hardcode Random State ( 1 )
+def set_seed(state: int = 1):
+    gens = (seed, torch.manual_seed, torch.cuda.manual_seed)
+    for set_state in gens:
+        set_state(state)
 
-        self.users = set(self.df.uid.unique())
-        self.movies = set(self.df.mid.unique())
 
-        self.train, self.test = self._train_test_split()
+def load_data(pre_train: bool = True, device: torch.device = None):
+    if pre_train:
+        train_data = read_csv('train-test/train_userPages.csv')
+        uid = LongTensor(train_data['user_id'].values).to(device)
+        mid = LongTensor(train_data['like_id'].values).to(device)
+        inps = torch.stack([uid, mid], 1)
+    else:
+        train_users = read_csv("train-test/train_usersID.csv", names=['user_id'])
+        uid = LongTensor(train_users['user_id'].values).to(device)
 
-    def _train_test_split(self):
-        self.df.rating = np.int8(1)
-        self.df['latest'] = self.df.groupby(['uid'])['date'].rank(method='first', ascending=False)
-        test = self.df[self.df.latest == 1]
-        train = self.df[self.df.latest > 1]
-        return (train[['uid', 'mid', 'rating']],
-                test[['uid', 'mid', 'rating']])
+        train_careers = read_csv("train-test/train_concentrationsID.csv", names=['like_id'])
+        mid = LongTensor(train_careers['like_id'].values).to(device)
 
-    def add_negatives(self, df: pd.DataFrame, item: str = 'mid', items=None, n_samples: int = 4):
-        if items is None:
-            items = set(self.df[item].unique())
+        train_protected_attributes = read_csv("train-test/train_protectedAttributes.csv")
+        gender = LongTensor(train_protected_attributes['gender'].values).to(device)
+        inps = torch.stack([uid, mid, gender], 1)
+    tgts = torch.ones(len(uid), dtype=torch.float).to(device)
+    return TensorDataset(inps, tgts)
 
-        combine = df.groupby('uid')[item].apply(set).reset_index()
-        combine['negatives'] = combine[item].apply(lambda x: sample(list(items - x), n_samples))
 
-        s = combine.apply(lambda x: pd.Series(x.negatives, dtype=np.int16), axis=1).stack().reset_index()
-        s.rename(columns={'level_0': 'uid', 0: item}, inplace=True)
-        s.drop(['level_1'], axis=1, inplace=True)
-        s['rating'] = np.int8(0)
-        s.uid = s.uid.astype(np.int16)
+# %% ADD NEGATIVE OCCURRENCES FUNCTION (IMPLICIT FEEDBACK)
+def add_false(batch: list, n_false: int = 15, n_items: int = 3952, device: torch.device = 'cpu'):
+    inputs, targets = batch
+    users, items = inputs[:, 0], inputs[:, 1]
 
-        complete = pd.concat([df, s]).sort_values(by=['uid', item])
-        return complete.reset_index(drop=True)
+    n = set(range(n_items))
 
-    @staticmethod
-    def load_ratings():
-        df = pd.read_csv('MovieLens/ratings.dat',
-                         sep='::',
-                         header=None,
-                         names=['uid', 'mid', 'rating', 'date'],
-                         parse_dates=['date'],
-                         date_parser=lambda x: pd.to_datetime(x, unit='s', origin='unix'),
-                         engine='python')
-        df.uid = df.uid - 1
-        df.mid = df.mid - 1
-        return df
+    not_seen = {}
+    negatives = []
 
-    @staticmethod
-    def get_features(df):
-        return [
-            df.uid.to_numpy(),
-            df.mid.to_numpy()
-        ]
-
-    @staticmethod
-    def get_dataset(df):
-        return tf.data.Dataset.from_tensor_slices(dict(df))
-
-    @staticmethod
-    def get_target(df):
-        return df.rating.to_numpy()
+    for user in users.cpu().numpy():
+        if user not in not_seen:
+            # not_seen[user] = list(n - set(items[users == user].cpu().numpy()))
+            not_seen[user] = list(n - set(torch.masked_select(items, torch.eq(users, user)).cpu().numpy()))
+        negatives.append(
+            (
+                torch.full((n_false,), user).to(device),
+                torch.tensor(choice(not_seen[user], size=n_false)).to(device),
+                torch.zeros(n_false, ).to(device)
+            )
+        )
+    for negative in negatives:
+        uu, mm, rr = negative
+        users = torch.cat([users, uu])
+        items = torch.cat([items, mm])
+        targets = torch.cat([targets, rr])
+    return users, items, targets

@@ -1,5 +1,3 @@
-import pandas as pd
-
 jobs = {
     0: "other",  # drop
     1: "academic/educator",
